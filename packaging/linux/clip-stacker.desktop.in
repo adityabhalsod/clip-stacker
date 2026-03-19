@@ -1,10 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=clip-stacker
-Comment=Clipboard history manager for Linux desktops
+Name=Clip Stacker
+GenericName=Clipboard Manager
+Comment=Keep a history of everything you copy and paste any item instantly
 Exec=@CMAKE_INSTALL_PREFIX@/bin/clip-stacker
 Icon=clip-stacker
 Terminal=false
-Categories=Utility;
+Categories=Utility;GTK;Qt;
+Keywords=clipboard;copy;paste;history;manager;
 StartupNotify=false
 X-GNOME-Autostart-enabled=true

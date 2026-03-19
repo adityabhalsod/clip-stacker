@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QSystemTrayIcon>
 
+class QAction;
 class HistoryManager;
 class PopupController;
 class SettingsManager;
@@ -30,8 +31,20 @@ private:
     // Enable autostart by writing a per-user desktop entry into ~/.config/autostart.
     void enableAutostart();
 
+    // Disable autostart by removing the per-user desktop entry from ~/.config/autostart.
+    void disableAutostart();
+
+    // Update the autostart action label to reflect whether autostart is currently enabled.
+    void refreshAutostartAction();
+
+    // Check whether a per-user autostart desktop entry already exists.
+    bool isAutostartEnabled() const;
+
     // Keep the shared runtime settings available for the settings dialog.
     SettingsManager *m_settingsManager = nullptr;
+
+    // Track the autostart menu action so its text can be toggled at runtime.
+    QAction *m_autostartAction = nullptr;
 
     // Keep the tray icon alive for the life of the background service.
     QSystemTrayIcon m_trayIcon;

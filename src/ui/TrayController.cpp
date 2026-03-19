@@ -41,9 +41,19 @@ void TrayController::initialize(PopupController *popupController, HistoryManager
     QAction *settingsAction = menu->addAction(QStringLiteral("Settings"));
     connect(settingsAction, &QAction::triggered, this, &TrayController::showSettings);
 
-    // Provide a first-run convenience action for enabling per-user autostart.
-    QAction *autostartAction = menu->addAction(QStringLiteral("Enable Auto-Start"));
-    connect(autostartAction, &QAction::triggered, this, &TrayController::enableAutostart);
+    // Provide a toggle action for enabling or disabling per-user autostart.
+    m_autostartAction = menu->addAction(QString());
+    refreshAutostartAction();
+    connect(m_autostartAction, &QAction::triggered, this, [this]() {
+        // Toggle autostart based on whether it is currently enabled.
+        if (isAutostartEnabled()) {
+            disableAutostart();
+        } else {
+            enableAutostart();
+        }
+        // Refresh the label so the menu reflects the new state immediately.
+        refreshAutostartAction();
+    });
 
     menu->addSeparator();
 
@@ -55,9 +65,10 @@ void TrayController::initialize(PopupController *popupController, HistoryManager
     m_trayIcon.setContextMenu(menu);
     m_trayIcon.show();
 
-    // Support left-click activation as a quick popup toggle.
+    // Support left-click and double-click activation as quick popup toggles.
     connect(&m_trayIcon, &QSystemTrayIcon::activated, this, [popupController](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger) {
+        // Open the clipboard history popup on single-click or double-click.
+        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
             popupController->togglePopup();
         }
     });
@@ -78,12 +89,14 @@ void TrayController::showSettings()
 
 void TrayController::enableAutostart()
 {
+    // Build the standard per-user autostart directory path.
     const QString autostartDirectory = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + QStringLiteral("/autostart");
     QDir().mkpath(autostartDirectory);
     const QString desktopFilePath = autostartDirectory + QStringLiteral("/clip-stacker.desktop");
 
     QFile desktopFile(desktopFilePath);
     if (desktopFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        // Resolve the actual executable path so the autostart entry always points to the installed binary.
         const QString executablePath = QCoreApplication::applicationFilePath();
         const QByteArray content = QStringLiteral(
                                       "[Desktop Entry]\n"
@@ -102,4 +115,40 @@ void TrayController::enableAutostart()
     } else {
         showMessage(QStringLiteral("clip-stacker"), QStringLiteral("Failed to write the autostart desktop entry."));
     }
+}
+
+void TrayController::disableAutostart()
+{
+    // Resolve the autostart desktop file path for the current user.
+    const QString desktopFilePath = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+                                    + QStringLiteral("/autostart/clip-stacker.desktop");
+
+    // Remove the desktop entry file to stop the session from launching clip-stacker on login.
+    if (QFile::exists(desktopFilePath)) {
+        if (QFile::remove(desktopFilePath)) {
+            showMessage(QStringLiteral("clip-stacker"), QStringLiteral("Autostart disabled for the current user."));
+        } else {
+            showMessage(QStringLiteral("clip-stacker"), QStringLiteral("Failed to remove the autostart desktop entry."));
+        }
+    } else {
+        showMessage(QStringLiteral("clip-stacker"), QStringLiteral("Autostart is already disabled."));
+    }
+}
+
+void TrayController::refreshAutostartAction()
+{
+    // Update the menu action text so the user always sees the correct toggle option.
+    if (m_autostartAction) {
+        m_autostartAction->setText(isAutostartEnabled()
+                                      ? QStringLiteral("Disable Auto-Start")
+                                      : QStringLiteral("Enable Auto-Start"));
+    }
+}
+
+bool TrayController::isAutostartEnabled() const
+{
+    // Check for the per-user autostart desktop file to determine current state.
+    const QString desktopFilePath = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+                                    + QStringLiteral("/autostart/clip-stacker.desktop");
+    return QFile::exists(desktopFilePath);
 }

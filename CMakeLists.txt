@@ -88,6 +88,14 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/clip-stacker.desktop DESTINATION share
 # Install the scalable application icon into the hicolor icon theme hierarchy.
 install(FILES assets/icons/clip-stacker.svg DESTINATION share/icons/hicolor/scalable/apps)
 
+# Install pre-generated PNG icons at standard sizes so desktop menus display the icon reliably.
+# The PNGs are committed to assets/icons/ and installed directly — no build-time rasterization needed.
+foreach(_SIZE 48 128 256)
+    install(FILES "assets/icons/clip-stacker-${_SIZE}.png"
+            DESTINATION "share/icons/hicolor/${_SIZE}x${_SIZE}/apps"
+            RENAME clip-stacker.png)
+endforeach()
+
 # Install the helper script used to enable autostart for the current user session.
 install(PROGRAMS packaging/linux/install-autostart.sh DESTINATION lib/clip-stacker)
 
