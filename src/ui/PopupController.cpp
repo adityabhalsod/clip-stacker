@@ -5,6 +5,8 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListView>
+#include <QModelIndex>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QCursor>
 #include <QGuiApplication>
@@ -27,7 +29,10 @@ bool PopupController::initialize(HistoryListModel *historyListModel, HistoryMana
     m_dialog = new QDialog();
     m_dialog->setWindowTitle(QStringLiteral("Clipboard History"));
     m_dialog->setModal(false);
-    m_dialog->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    // Behave like a natural top-level OS tooltip or interactive list widget without system border decorations.
+    m_dialog->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
+    // Declare that this unmanaged hierarchy can process keyboard events eagerly.
+    m_dialog->setFocusPolicy(Qt::StrongFocus);
     m_dialog->resize(460, 520);
     m_dialog->installEventFilter(this);
 
@@ -48,19 +53,33 @@ bool PopupController::initialize(HistoryListModel *historyListModel, HistoryMana
     m_listView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_listView->setUniformItemSizes(true);
+    // Request strong focus policy so the list view can intercept keyboard events.
+    m_listView->setFocusPolicy(Qt::StrongFocus);
     m_listView->installEventFilter(this);
     layout->addWidget(m_listView);
 
     // Refresh the history list immediately whenever the search text changes.
     connect(m_searchLineEdit, &QLineEdit::textChanged, historyManager, &HistoryManager::setSearchQuery);
 
-    // Activate the selected history item when the user double-clicks or presses Enter on a row.
-    connect(m_listView, &QListView::activated, this, [this](const QModelIndex &index) {
+    // Provide single-click activation, skipping the traditional double-click requirement.
+    connect(m_listView, &QListView::clicked, this, [this](const QModelIndex &index) {
         if (!index.isValid() || !m_historyManager) {
             return;
         }
-        m_historyManager->activateEntry(index.data(HistoryListModel::IdRole).toLongLong());
+
+        // Keep a copy of the index identifier so we can safely activate it outside the lambda scope.
+        const qint64 entryId = index.data(HistoryListModel::IdRole).toLongLong();
+
+        // Ensure the screen structure repaints immediately so input goes back to the desktop shell.
         hidePopup();
+
+        // Introduce a short timeout to let the desktop window manager return focus to the previous active window.
+        QTimer::singleShot(150, this, [this, entryId]() {
+            if (m_historyManager) {
+                // Command the history layer to apply the clipboard selection natively.
+                m_historyManager->activateEntry(entryId);
+            }
+        });
     });
 
     // Hide the popup automatically when the dialog loses activation.
@@ -121,6 +140,12 @@ bool PopupController::eventFilter(QObject *watched, QEvent *event)
             hidePopup();
             return true;
         }
+
+        // Bridge Return/Enter keystrokes into the new single-click signal handler.
+        if ((keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) && m_listView->currentIndex().isValid()) {
+            emit m_listView->clicked(m_listView->currentIndex());
+            return true;
+        }
     }
 
     // Defer all other events to the base QObject implementation.
@@ -143,15 +168,18 @@ void PopupController::showPopup()
     // Keep the popup close to the cursor while clamping it fully inside the current screen.
     const int width = m_dialog->width() > 0 ? m_dialog->width() : 460;
     const int height = m_dialog->height() > 0 ? m_dialog->height() : 520;
+    
+    // Spawn exactly near the cursor with a slight translation so the cursor itself remains perfectly visible.
     const int x = qBound(availableGeometry.left() + 12,
-                         cursorPosition.x() - (width / 2),
+                         cursorPosition.x() + 8,
                          availableGeometry.right() - width - 12);
     const int y = qBound(availableGeometry.top() + 12,
-                         cursorPosition.y() - height - 12,
+                         cursorPosition.y() + 8,
                          availableGeometry.bottom() - height - 12);
 
     // Reset the popup filter so the latest history entries are visible every time the popup opens.
     if (m_historyManager) {
+        // Clear existing filter buffers before painting the full collection model again.
         m_historyManager->setSearchQuery(QString());
     }
     if (m_searchLineEdit) {

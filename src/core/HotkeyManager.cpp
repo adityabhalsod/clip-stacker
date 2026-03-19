@@ -188,9 +188,10 @@ void HotkeyManager::processX11Events()
         return;
     }
 
-    // Read and handle each queued X11 event generated for the passive key grab connection.
-    while (XPending(m_display) > 0) {
+    // Discard any older assumptions and query the OS socket properly so the loop fully unwinds.
+    while (XEventsQueued(m_display, QueuedAfterReading) > 0) {
         XEvent event;
+        // Parse the exact event structure from the X server message sequence.
         XNextEvent(m_display, &event);
 
         // Emit the activation signal when the queued key press matches the configured hotkey.
