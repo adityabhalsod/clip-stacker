@@ -1,0 +1,18 @@
+# Ignore local build directories created by CMake, Make, or Ninja workflows.
+build/
+
+# Ignore alternate local build directories created by IDEs or manual experiments.
+cmake-build-*/
+
+# Ignore CPack staging directories and generated package archives.
+_CPack_Packages/
+*.deb
+
+# Ignore editor-specific temporary files that should never be shared.
+*.user
+*.swp
+*~
+
+# Ignore local runtime databases and logs generated during development or usage.
+*.sqlite
+*.log

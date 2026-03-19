@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=clip-stacker
+Comment=Clipboard history manager for Linux desktops
+Exec=@CMAKE_INSTALL_PREFIX@/bin/clip-stacker
+Icon=clip-stacker
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

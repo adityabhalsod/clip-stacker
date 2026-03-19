@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/qml">
+        <file alias="Main.qml">qml/Main.qml</file>
+        <file alias="components/HistoryDelegate.qml">qml/components/HistoryDelegate.qml</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file alias="clip-stacker.svg">../assets/icons/clip-stacker.svg</file>
+    </qresource>
+</RCC>
