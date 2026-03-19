@@ -11,7 +11,7 @@ It is designed primarily for Ubuntu-class desktop systems and packaged as a `.de
 clip-stacker helps you:
 
 - keep a history of copied text, images, HTML, RTF, and file references
-- open clipboard history instantly with `Super+V`
+- open clipboard history instantly with `Ctrl+Super+V`
 - reopen clipboard history from the tray menu
 - pin important clipboard items so they are not removed
 - search old clipboard items quickly
@@ -24,7 +24,7 @@ clip-stacker provides:
 - a modular Qt 6 codebase using CMake
 - a widget-based popup UI with native tray workflow and cursor-aware placement
 - SQLite-backed persistence with deduplication and metadata
-- X11 global `Super+V` popup activation and X11 XTest-based paste simulation
+- X11 global `Ctrl+Super+V` popup activation and X11 XTest-based paste simulation
 - CLI fallback through a command entry point when compositor restrictions block global hotkeys
 - shared-folder sync support for non-sensitive clipboard data
 - Debian packaging through CPack and CMake install rules
@@ -35,7 +35,7 @@ clip-stacker provides:
 - SQLite-backed storage with timestamps, source application tracking where available, and deduplication
 - Pin and favorite support for important entries
 - Searchable popup UI with keyboard navigation and focus-loss dismissal
-- Global `Super+V` shortcut on X11 to open the popup at the current cursor position
+- Global `Ctrl+Super+V` shortcut on X11 to open the popup at the current cursor position
 - Tray icon with quick actions, notifications, auto-start, and settings access
 - `.deb` packaging pipeline for Ubuntu-style installation
 
@@ -47,7 +47,7 @@ The supported path currently includes:
 
 - clipboard monitoring through Qt
 - tray icon workflow for opening clipboard history
-- global `Super+V` popup toggle on X11 sessions
+- global `Ctrl+Super+V` popup toggle on X11 sessions
 - active window class lookup for source application detection on X11
 - simulated `Ctrl+V` paste after restoring a clipboard item on X11
 - popup toggle through CLI fallback when you want to bind your own desktop shortcut
@@ -77,7 +77,7 @@ Launch `clip-stacker` from the application menu.
 ### 3. Use it daily
 
 - copy text, images, or files normally
-- press `Super+V` anywhere to open clipboard history near the cursor on X11
+- press `Ctrl+Super+V` anywhere to open clipboard history near the cursor on X11
 - open the tray icon menu to show clipboard history
 - open history from the tray icon menu if you prefer mouse access
 - use `clip-stacker --toggle-popup` as a manual shortcut fallback on desktops where global grabs are restricted
@@ -221,9 +221,9 @@ In your current repo state, these local generated artifacts should stay out of G
 - Automatic paste currently depends on X11 XTest support.
 - On Wayland, the app restores the clipboard item, but you may need to paste manually.
 
-### `Super+V` does not open the popup
+### `Ctrl+Super+V` does not open the popup
 
-- Global `Super+V` currently depends on an X11 session.
+- Global `Ctrl+Super+V` currently depends on an X11 session.
 - On Wayland, most compositors do not allow regular applications to register a universal global shortcut.
 - In that case, use the tray menu or bind `clip-stacker --toggle-popup` in your desktop keyboard shortcut settings.
 

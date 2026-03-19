@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QElapsedTimer>
 
 class HistoryListModel;
 class HistoryManager;
@@ -45,4 +46,7 @@ private:
 
     // Own the list view used to render the clipboard history model.
     QListView *m_listView = nullptr;
+
+    // Track when the popup was last hidden to prevent the WindowDeactivate/hotkey race from reopening it.
+    QElapsedTimer m_hideTimer;
 };

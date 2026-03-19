@@ -107,7 +107,7 @@ ApplicationWindow {
                     Label {
                         id: shortcutLabel
                         anchors.centerIn: parent
-                        text: "Super+V"
+                        text: "Ctrl+Super+V"
                         color: "#f7f1ea"
                         font.pixelSize: 12
                         font.bold: true

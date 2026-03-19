@@ -17,7 +17,7 @@ public:
         int historyLimit = 250;
         bool syncEnabled = false;
         QString syncDirectory;
-        QString hotkey = QStringLiteral("Super+V");
+        QString hotkey = QStringLiteral("Ctrl+Super+V");
         bool storeSensitiveData = false;
         QStringList blockedApplications;
         QStringList sensitivePatterns;

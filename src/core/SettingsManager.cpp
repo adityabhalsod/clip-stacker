@@ -30,7 +30,7 @@ SettingsManager::SettingsSnapshot SettingsManager::snapshot() const
     snapshot.historyLimit = m_settings.value(QStringLiteral("history/limit"), 250).toInt();
     snapshot.syncEnabled = m_settings.value(QStringLiteral("sync/enabled"), false).toBool();
     snapshot.syncDirectory = m_settings.value(QStringLiteral("sync/directory"), QString()).toString();
-    snapshot.hotkey = m_settings.value(QStringLiteral("hotkey/sequence"), QStringLiteral("Super+V")).toString();
+    snapshot.hotkey = m_settings.value(QStringLiteral("hotkey/sequence"), QStringLiteral("Ctrl+Super+V")).toString();
     snapshot.storeSensitiveData = m_settings.value(QStringLiteral("privacy/storeSensitiveData"), false).toBool();
     snapshot.blockedApplications = m_settings.value(QStringLiteral("privacy/blockedApplications")).toStringList();
     snapshot.sensitivePatterns = m_settings.value(QStringLiteral("privacy/sensitivePatterns")).toStringList();

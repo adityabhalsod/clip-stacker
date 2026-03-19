@@ -32,7 +32,7 @@ int hotkeyErrorHandler(Display *, XErrorEvent *event)
 
 #endif
 
-// Parse a simple hotkey string like Super+V into an X11 modifier mask and keysym.
+// Parse a hotkey string like Ctrl+Super+V into an X11 modifier mask and keysym.
 bool parseSequence(const QString &sequence, unsigned int *modifiers, QString *keyToken)
 {
     const QStringList tokens = sequence.split(QLatin1Char('+'), Qt::SkipEmptyParts);
@@ -148,9 +148,9 @@ bool HotkeyManager::registerHotkey(const QString &sequence)
     // Restore the previous X11 error handler now that registration has completed.
     XSetErrorHandler(previousErrorHandler);
 
-    // Tell the user when another application or the desktop shell already owns Super+V.
+    // Tell the user when another application or the desktop shell already owns the shortcut.
     if (g_hotkeyGrabFailed) {
-        emit availabilityChanged(false, QStringLiteral("Super+V is already reserved by another application or desktop shortcut."));
+        emit availabilityChanged(false, QStringLiteral("Ctrl+Super+V is already reserved by another application or desktop shortcut."));
         return false;
     }
 
@@ -210,9 +210,15 @@ void HotkeyManager::processX11Events()
     // Flush any outgoing requests so the connection stays clean for the next grab cycle.
     XFlush(m_display);
 
-    // Defer the activation signal to the next event-loop pass to prevent Xlib reentrancy from Qt widget operations.
+    // Explicitly release the keyboard so the passive grab can fire again on the next key press.
     if (shouldActivate) {
-        QTimer::singleShot(0, this, [this]() { emit activated(); });
+        XAllowEvents(m_display, AsyncKeyboard, CurrentTime);
+        XFlush(m_display);
+    }
+
+    // Emit the activation signal directly — we are already deferred via the QTimer poll callback.
+    if (shouldActivate) {
+        emit activated();
     }
 #endif
 }

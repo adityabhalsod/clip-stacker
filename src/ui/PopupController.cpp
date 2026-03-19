@@ -74,6 +74,12 @@ void PopupController::togglePopup()
         hidePopup();
         return;
     }
+    // Suppress reopening when the popup was hidden within the last 500 ms to avoid the
+    // WindowDeactivate / hotkey race where the WM hides the popup an instant before the
+    // hotkey event fires togglePopup, causing it to immediately reopen.
+    if (m_hideTimer.isValid() && m_hideTimer.elapsed() < 500) {
+        return;
+    }
     showPopup();
 }
 
@@ -83,6 +89,8 @@ void PopupController::hidePopup()
     if (m_dialog) {
         m_dialog->hide();
     }
+    // Record the hide timestamp so togglePopup can suppress accidental reopens from the WM race.
+    m_hideTimer.start();
     // Reset the search filter so the full history is visible the next time the popup opens.
     if (m_historyManager) {
         m_historyManager->setSearchQuery(QString());

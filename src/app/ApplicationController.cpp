@@ -67,7 +67,7 @@ bool ApplicationController::initialize()
         m_trayController->showMessage(QStringLiteral("clip-stacker"), message);
     });
 
-    // Toggle the popup globally with Super+V when the current session supports native hotkeys.
+    // Toggle the popup globally with Ctrl+Super+V when the current session supports native hotkeys.
     connect(m_hotkeyManager.get(), &HotkeyManager::activated, m_popupController.get(), &PopupController::togglePopup);
     connect(m_hotkeyManager.get(), &HotkeyManager::availabilityChanged, m_trayController.get(), [this](bool available, const QString &reason) {
         if (!available && !reason.isEmpty()) {
@@ -83,7 +83,8 @@ bool ApplicationController::initialize()
     connect(m_settingsManager.get(), &SettingsManager::settingsChanged, m_historyManager.get(), &HistoryManager::refreshModel);
 
     // Register the default popup shortcut after the UI is ready to receive activation events.
-    m_hotkeyManager->registerHotkey(QStringLiteral("Super+V"));
+    // Register Ctrl+Super+V as the default popup shortcut to avoid conflicting with desktop shell bindings.
+    m_hotkeyManager->registerHotkey(QStringLiteral("Ctrl+Super+V"));
 
     // Start monitoring the clipboard with the tray menu and control socket as the popup entry points.
     m_clipboardListener->start();
