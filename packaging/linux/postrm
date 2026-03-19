@@ -1,0 +1,14 @@
+#!/bin/sh
+# Post-removal script — refreshes desktop and icon caches after the
+# application is uninstalled so stale entries disappear from menus.
+set -e
+
+# Rebuild the desktop file database to remove the stale entry.
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+
+# Refresh the icon theme cache to drop the removed icon.
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true
+fi

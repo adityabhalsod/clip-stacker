@@ -111,4 +111,12 @@ set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SECTION utils)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+
+# Ensure the .deb installs under /usr so desktop files and icons land in standard XDG paths.
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+
+# Register Debian maintainer scripts that refresh the desktop and icon caches on install/remove.
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postrm")
+
 include(CPack)
