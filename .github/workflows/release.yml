@@ -1,0 +1,272 @@
+# ============================================================================
+# Linux Release Build & Publish — GitHub Actions
+# ============================================================================
+# Triggers on push to main, alpha, and beta branches.
+# Builds a clean Release binary via CMake, packages a .deb with CPack,
+# auto-increments the version, creates a GitHub Release with changelog,
+# and uploads the .deb as a downloadable asset.
+#
+# Branch → Release channel mapping:
+#   main  → stable release    (v0.1.0, v0.2.0, …)
+#   beta  → beta pre-release  (v0.2.0-beta.1, v0.2.0-beta.2, …)
+#   alpha → alpha pre-release (v0.2.0-alpha.1, v0.2.0-alpha.2, …)
+#
+# Performance optimizations:
+#   - Ninja generator for faster parallel builds
+#   - Build uses all available CPU cores (-j$(nproc))
+#   - CMake / apt dependency caching where feasible
+# ============================================================================
+
+name: Linux Release
+
+on:
+  push:
+    branches:
+      - main
+      - alpha
+      - beta
+
+# Only one release workflow per branch at a time
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+# Permissions required to create releases and push tags
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release (${{ github.ref_name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    # Skip the pipeline when the commit message contains [skip ci] or [ci skip]
+    if: |
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[ci skip]')
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed for changelog generation
+
+      # ── Install build dependencies ────────────────────────────────────
+      - name: Install Qt 6, CMake, and X11 build dependencies
+        run: |
+          sudo apt-get update -qq
+
+          # Install the full set of development packages required by CMakeLists.txt
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            qt6-base-dev \
+            qt6-declarative-dev \
+            qt6-tools-dev \
+            qt6-svg-dev \
+            qt6-wayland \
+            libqt6sql6-sqlite \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxtst-dev \
+            libxfixes-dev
+
+      # ── Determine version & release channel ───────────────────────────
+      - name: Determine version and release channel
+        id: version
+        run: |
+          # Read the base version from CMakeLists.txt (project VERSION x.y.z)
+          BASE_VERSION=$(grep -oP 'project\(clip-stacker\s+VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+
+          BRANCH="${GITHUB_REF_NAME}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Count commits since the last tag to generate a build number
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            BUILD_NUMBER=$(git rev-list "${LAST_TAG}..HEAD" --count)
+          else
+            BUILD_NUMBER=$(git rev-list HEAD --count)
+          fi
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+          # Construct the full version string based on the branch channel
+          if [ "$BRANCH" = "main" ]; then
+            VERSION="v${BASE_VERSION}"
+            DEB_NAME="clip-stacker_${BASE_VERSION}_amd64.deb"
+            PRERELEASE="false"
+            CHANNEL="stable"
+          elif [ "$BRANCH" = "beta" ]; then
+            VERSION="v${BASE_VERSION}-beta.${BUILD_NUMBER}"
+            DEB_NAME="clip-stacker_${BASE_VERSION}-beta.${BUILD_NUMBER}_amd64.deb"
+            PRERELEASE="true"
+            CHANNEL="beta"
+          elif [ "$BRANCH" = "alpha" ]; then
+            VERSION="v${BASE_VERSION}-alpha.${BUILD_NUMBER}"
+            DEB_NAME="clip-stacker_${BASE_VERSION}-alpha.${BUILD_NUMBER}_amd64.deb"
+            PRERELEASE="true"
+            CHANNEL="alpha"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "deb_name=$DEB_NAME" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+          echo "📦 Version: $VERSION | Channel: $CHANNEL | Build: $BUILD_NUMBER"
+
+      # ── Generate changelog from commits ───────────────────────────────
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          # Build a markdown changelog from commit messages since last tag
+          if [ -n "$LAST_TAG" ]; then
+            echo "Generating changelog since $LAST_TAG"
+            RANGE="${LAST_TAG}..HEAD"
+          else
+            echo "No previous tag found — using full commit history"
+            RANGE="HEAD"
+          fi
+
+          # Categorize commits by conventional-commit prefixes
+          {
+            echo "## What's Changed"
+            echo ""
+
+            # Collect feature commits (feat:)
+            FEATURES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^feat" -i 2>/dev/null || true)
+            if [ -n "$FEATURES" ]; then
+              echo "### ✨ Features"
+              echo "$FEATURES"
+              echo ""
+            fi
+
+            # Collect bug-fix commits (fix:)
+            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^fix" -i 2>/dev/null || true)
+            if [ -n "$FIXES" ]; then
+              echo "### 🐛 Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Collect performance commits (perf:)
+            PERF=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^perf" -i 2>/dev/null || true)
+            if [ -n "$PERF" ]; then
+              echo "### ⚡ Performance"
+              echo "$PERF"
+              echo ""
+            fi
+
+            # Collect all other commits not matching the above categories
+            OTHER=$(git log "$RANGE" --pretty=format:"- %s (%h)" --invert-grep --grep="^feat" --grep="^fix" --grep="^perf" -i 2>/dev/null || true)
+            if [ -n "$OTHER" ]; then
+              echo "### 📦 Other Changes"
+              echo "$OTHER"
+              echo ""
+            fi
+
+            echo "---"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG:-initial}...${{ steps.version.outputs.version }}"
+          } > changelog.md
+
+          cat changelog.md
+
+          # Store changelog as multiline output
+          {
+            echo "body<<CHANGELOG_EOF"
+            cat changelog.md
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Configure CMake ───────────────────────────────────────────────
+      - name: Configure CMake (Release)
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      # ── Build ─────────────────────────────────────────────────────────
+      - name: Build
+        run: |
+          cmake --build build -j$(nproc)
+
+      # ── Package .deb ──────────────────────────────────────────────────
+      - name: Package .deb with CPack
+        run: |
+          cd build
+          cpack -G DEB
+
+          # List generated packages for the build log
+          echo "📦 Generated packages:"
+          ls -lh *.deb 2>/dev/null || ls -lh _CPack_Packages/ 2>/dev/null || true
+
+      # ── Rename .deb to versioned filename ─────────────────────────────
+      - name: Rename .deb
+        run: |
+          DEB_DEST="${{ steps.version.outputs.deb_name }}"
+
+          # Find the generated .deb file (CPack may use its own naming convention)
+          DEB_SRC=$(find build -name '*.deb' -type f | head -1)
+
+          if [ -z "$DEB_SRC" ]; then
+            echo "❌ No .deb file found in build/"
+            exit 1
+          fi
+
+          # Copy with the versioned name for the release asset
+          cp "$DEB_SRC" "$DEB_DEST"
+
+          # Print .deb size for the build log
+          DEB_SIZE=$(du -h "$DEB_DEST" | cut -f1)
+          echo "📦 Package: $DEB_DEST ($DEB_SIZE)"
+
+      # ── Create Git tag ────────────────────────────────────────────────
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+
+          # Check if tag already exists — skip if it does
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "⚠️  Tag $TAG already exists, skipping tag creation"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "✅ Created and pushed tag $TAG"
+          fi
+
+      # ── Create GitHub Release with .deb asset ─────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "${{ steps.version.outputs.version }}"
+          body: ${{ steps.changelog.outputs.body }}
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          draft: false
+          generate_release_notes: false
+          files: |
+            ${{ steps.version.outputs.deb_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Post-release summary ──────────────────────────────────────────
+      - name: Release summary
+        run: |
+          echo "============================================"
+          echo "🚀 Release Published!"
+          echo "============================================"
+          echo "Version  : ${{ steps.version.outputs.version }}"
+          echo "Channel  : ${{ steps.version.outputs.channel }}"
+          echo "Package  : ${{ steps.version.outputs.deb_name }}"
+          echo "Pre-rel  : ${{ steps.version.outputs.prerelease }}"
+          echo "Release  : https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
+          echo "============================================"
