@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QMimeData>
+#include <QTimer>
 #include <QUrl>
 
 #include "ClipboardDatabase.h"
@@ -54,6 +55,14 @@ void HistoryManager::setSearchQuery(const QString &searchQuery)
     refreshModel();
 }
 
+void HistoryManager::capturePasteTarget()
+{
+    // Forward to InputSimulator to remember the X11 window that should receive the paste event.
+    if (m_inputSimulator) {
+        m_inputSimulator->capturePasteTarget();
+    }
+}
+
 void HistoryManager::activateEntry(qint64 id)
 {
     const ClipboardEntry entry = m_database->fetchEntryById(id);
@@ -76,10 +85,16 @@ void HistoryManager::activateEntry(qint64 id)
     m_database->markUsed(id);
     refreshModel();
 
-    // Attempt a native paste and report a graceful fallback notice if the platform does not allow it.
-    if (!m_inputSimulator->simulatePaste()) {
-        emit activationNotice(QStringLiteral("Clipboard updated. Native paste automation is unavailable in this session, so paste manually with Ctrl+V."));
-    }
+    // Restore focus to the target application that was active before the popup opened.
+    m_inputSimulator->restorePasteTarget();
+
+    // Wait for the window manager to finish the focus switch before injecting the paste shortcut.
+    QTimer::singleShot(300, this, [this]() {
+        // Attempt a native paste and report a graceful fallback notice if unavailable.
+        if (!m_inputSimulator->simulatePaste()) {
+            emit activationNotice(QStringLiteral("Clipboard updated. Native paste automation is unavailable in this session, so paste manually with Ctrl+V."));
+        }
+    });
 }
 
 void HistoryManager::togglePinned(qint64 id)

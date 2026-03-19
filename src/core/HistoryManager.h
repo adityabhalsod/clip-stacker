@@ -36,6 +36,9 @@ public:
     // Update the search filter applied to the popup list.
     Q_INVOKABLE void setSearchQuery(const QString &searchQuery);
 
+    // Record the currently focused window so paste can return to it after popup selection.
+    void capturePasteTarget();
+
     // Restore the selected entry to the live clipboard and attempt to paste it.
     Q_INVOKABLE void activateEntry(qint64 id);
 

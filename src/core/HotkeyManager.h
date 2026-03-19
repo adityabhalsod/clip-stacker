@@ -2,9 +2,8 @@
 
 #include <QObject>
 #include <QString>
-#include <memory>
 
-class QSocketNotifier;
+class QTimer;
 
 // Forward declare the opaque X11 display type so the header does not leak X11 macros into Qt's MOC step.
 struct _XDisplay;
@@ -44,8 +43,8 @@ private:
     // Keep a dedicated X11 connection alive so the global key grab remains active for the app lifetime.
     _XDisplay *m_display = nullptr;
 
-    // Watch the X11 connection file descriptor inside the Qt event loop.
-    std::unique_ptr<QSocketNotifier> m_eventNotifier;
+    // Poll the dedicated X11 connection at regular intervals to detect hotkey presses.
+    QTimer *m_pollTimer = nullptr;
 
     // Cache the root window used for X11 passive key grabs.
     unsigned long m_rootWindow = 0;

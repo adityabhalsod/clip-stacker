@@ -1,8 +1,8 @@
 #include "HotkeyManager.h"
 
 #include <QGuiApplication>
-#include <QSocketNotifier>
 #include <QStringList>
+#include <QTimer>
 
 #include <array>
 
@@ -137,7 +137,7 @@ bool HotkeyManager::registerHotkey(const QString &sequence)
                  static_cast<int>(keyCode),
                  modifiers | extraMask,
                  m_rootWindow,
-                 True,
+                 False,
                  GrabModeAsync,
                  GrabModeAsync);
     }
@@ -154,18 +154,16 @@ bool HotkeyManager::registerHotkey(const QString &sequence)
         return false;
     }
 
-    // Create the Qt socket notifier once so the dedicated X11 connection is pumped from the main event loop.
-    if (!m_eventNotifier) {
-        m_eventNotifier = std::make_unique<QSocketNotifier>(ConnectionNumber(m_display), QSocketNotifier::Read, this);
-
-        // Drain queued X11 events whenever the global hotkey connection becomes readable.
-        connect(m_eventNotifier.get(), &QSocketNotifier::activated, this, [this]() {
-            processX11Events();
-        });
+    // Create a polling timer so the dedicated X11 connection is checked at regular intervals.
+    if (!m_pollTimer) {
+        m_pollTimer = new QTimer(this);
+        // Poll every 50 ms — responsive enough for a keyboard shortcut, cheap for the event loop.
+        m_pollTimer->setInterval(50);
+        connect(m_pollTimer, &QTimer::timeout, this, &HotkeyManager::processX11Events);
     }
 
-    // Make sure the notifier is enabled after successful registration.
-    m_eventNotifier->setEnabled(true);
+    // Start polling after successful registration.
+    m_pollTimer->start();
 
     // Persist the registration state used by cleanup and event matching.
     m_registered = true;
@@ -188,22 +186,33 @@ void HotkeyManager::processX11Events()
         return;
     }
 
-    // Discard any older assumptions and query the OS socket properly so the loop fully unwinds.
-    while (XEventsQueued(m_display, QueuedAfterReading) > 0) {
+    // Track whether a matching key press was found so the signal can be emitted outside the Xlib loop.
+    bool shouldActivate = false;
+
+    // Read and handle each queued X11 event generated for the passive key grab connection.
+    while (XPending(m_display) > 0) {
         XEvent event;
-        // Parse the exact event structure from the X server message sequence.
         XNextEvent(m_display, &event);
 
-        // Emit the activation signal when the queued key press matches the configured hotkey.
+        // Check if the queued key press matches the configured hotkey.
         if (event.type == KeyPress) {
             const auto &keyEvent = event.xkey;
+            // Strip lock-state bits and compare only the meaningful accelerator modifiers.
             const unsigned int relevantState = keyEvent.state & (ShiftMask | ControlMask | Mod1Mask | Mod4Mask);
 
-            // Ignore lock-state bits and only compare the meaningful accelerator modifiers.
+            // Record a match so the activation signal can be deferred safely.
             if (static_cast<unsigned int>(keyEvent.keycode) == m_keyCode && relevantState == m_modifiers) {
-                emit activated();
+                shouldActivate = true;
             }
         }
+    }
+
+    // Flush any outgoing requests so the connection stays clean for the next grab cycle.
+    XFlush(m_display);
+
+    // Defer the activation signal to the next event-loop pass to prevent Xlib reentrancy from Qt widget operations.
+    if (shouldActivate) {
+        QTimer::singleShot(0, this, [this]() { emit activated(); });
     }
 #endif
 }
@@ -216,9 +225,9 @@ void HotkeyManager::unregisterHotkey()
         return;
     }
 
-    // Disable the notifier while the passive grab is being removed.
-    if (m_eventNotifier) {
-        m_eventNotifier->setEnabled(false);
+    // Stop polling while the passive grab is being removed.
+    if (m_pollTimer) {
+        m_pollTimer->stop();
     }
 
     // Remove the grab for the base modifier combination and the common lock-key variants.
