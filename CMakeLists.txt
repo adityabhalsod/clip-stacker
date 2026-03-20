@@ -117,7 +117,25 @@ set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Aditya")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SECTION utils)
-set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Explicit runtime dependencies covering Ubuntu 22.04 (libqt6coreN) and Ubuntu 24.04 /
+# arm64 (libqt6coreNt64 — the 64-bit time_t ABI transition rename).  Using package
+# alternatives ("A | B") lets apt pick whichever variant is present on the target system.
+# CPACK_DEBIAN_PACKAGE_SHLIBDEPS is intentionally NOT used: dpkg-shlibdeps fails on
+# aarch64 because it cannot resolve Qt6 library paths under the multiarch triplet
+# (/usr/lib/aarch64-linux-gnu), producing an empty data.tar and a ~1 KB package.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "libqt6core6t64 | libqt6core6 (>= 6.4), \
+libqt6gui6t64 | libqt6gui6 (>= 6.4), \
+libqt6widgets6t64 | libqt6widgets6 (>= 6.4), \
+libqt6qml6 (>= 6.4), \
+libqt6quick6 (>= 6.4), \
+libqt6sql6 (>= 6.4), \
+libqt6dbus6 (>= 6.4), \
+libqt6svg6 (>= 6.4), \
+libqt6network6 (>= 6.4), \
+libx11-6, \
+libxtst6, \
+libxfixes3")
 # Post-install / post-remove scripts refresh the desktop database and icon cache.
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postrm")
