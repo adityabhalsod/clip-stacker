@@ -7,11 +7,11 @@
 #   2. build    — compile + package in a matrix             (parallel)
 #   3. release  — collect all artefacts, publish Release   (runs once)
 #
-# Package matrix  (6 artefacts per release):
+# Package matrix  (5 artefacts per release):
 # ┌────────────┬──────────────────────────────────────────┬───────┬────────┐
 # │ Format     │ Target distros                           │ amd64 │ arm64  │
 # ├────────────┼──────────────────────────────────────────┼───────┼────────┤
-# │ .deb       │ Ubuntu 22.04+, Debian, Mint, Pop!_OS     │   ✓   │   ✓   │
+# │ .deb       │ Ubuntu 22.04+, Debian, Mint, Pop!_OS     │   ✓   │   —   │
 # │ .rpm       │ Fedora 37+, openSUSE, RHEL, AlmaLinux    │   ✓   │   ✓   │
 # │ .tar.gz    │ Arch Linux, generic / other distros      │   ✓   │   ✓   │
 # └────────────┴──────────────────────────────────────────┴───────┴────────┘
@@ -162,13 +162,13 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Job 2 — Build: compile and package for each distro × arch pair.
   #
-  # .deb  — built natively on the ubuntu runner (apt deps)
-  # .rpm  — built inside a fedora:40 container   (dnf deps + rpm-build)
+  # .deb    — amd64 only; built natively on ubuntu-24.04 (apt deps)
+  # .rpm    — built inside a fedora:40 container (dnf deps + rpm-build)
   # .tar.gz — built natively on the ubuntu runner (apt deps); compatible with
   #           Arch Linux and any distro with glibc >= Ubuntu 24.04
   #
-  # arm64 jobs use GitHub's hosted ubuntu-24.04-arm runners. For Fedora arm64
-  # Docker pulls the multi-arch fedora:40 image automatically.
+  # arm64 jobs (rpm/tar.gz) use GitHub's hosted ubuntu-24.04-arm runners.
+  # For Fedora arm64 Docker pulls the multi-arch fedora:40 image automatically.
   # ──────────────────────────────────────────────────────────────────────────
   build:
     name: "${{ matrix.pkg_label }} (${{ matrix.arch }})"
@@ -180,21 +180,13 @@ jobs:
       matrix:
         include:
 
-          # ── .deb — Ubuntu / Debian / Linux Mint / Pop!_OS ──────────────
+          # ── .deb — Ubuntu / Debian / Linux Mint / Pop!_OS (amd64 only) ──
           - runner:    ubuntu-24.04
             arch:      amd64
             distro:    ubuntu
             pkg_ext:   deb
             pkg_label: "Ubuntu/Debian .deb"
             container: null   # bare metal runner
-            install:   apt
-
-          - runner:    ubuntu-24.04-arm
-            arch:      arm64
-            distro:    ubuntu
-            pkg_ext:   deb
-            pkg_label: "Ubuntu/Debian .deb"
-            container: null
             install:   apt
 
           # ── .rpm — Fedora / openSUSE / RHEL / AlmaLinux / Rocky ────────

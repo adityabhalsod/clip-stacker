@@ -89,7 +89,7 @@ Go to the [**Releases**](../../releases) page and download the package for your 
 
 | Package | Distros | Architectures |
 |---------|---------|---------------|
-| `.deb` | Ubuntu 22.04+, Debian, Linux Mint, Pop!\_OS | amd64, arm64 |
+| `.deb` | Ubuntu 22.04+, Debian, Linux Mint, Pop!\_OS | amd64 |
 | `.rpm` | Fedora 37+, openSUSE, RHEL, AlmaLinux, Rocky | x86\_64, aarch64 |
 | `.tar.gz` | Arch Linux, and any other distro | x86\_64, aarch64 |
 
@@ -371,14 +371,14 @@ clip-stacker/
 Every push to `main`, `beta`, or `alpha` triggers a 3-job automated pipeline:
 
 1. **Prepare** — determines version, generates changelog, pushes git tag
-2. **Build matrix** — 6 parallel builds across distros and architectures
+2. **Build matrix** — 5 parallel builds across distros and architectures
 3. **Release** — collects all packages and publishes the GitHub Release
 
-**Package matrix (6 artefacts per release):**
+**Package matrix (5 artefacts per release):**
 
 | Format | Target Distros | amd64 / x86\_64 | arm64 / aarch64 |
 |--------|---------------|:--------------:|:---------------:|
-| `.deb` | Ubuntu 22.04+, Debian, Mint, Pop!\_OS | ✓ | ✓ |
+| `.deb` | Ubuntu 22.04+, Debian, Mint, Pop!\_OS | ✓ | — |
 | `.rpm` | Fedora 37+, openSUSE, RHEL, AlmaLinux | ✓ | ✓ |
 | `.tar.gz` | Arch Linux, generic / other distros | ✓ | ✓ |
 
