@@ -150,7 +150,8 @@ bool HotkeyManager::registerHotkey(const QString &sequence)
 
     // Tell the user when another application or the desktop shell already owns the shortcut.
     if (g_hotkeyGrabFailed) {
-        emit availabilityChanged(false, QStringLiteral("Ctrl+Super+V is already reserved by another application or desktop shortcut."));
+        // Report the conflict without naming a specific key so the message stays accurate after user customisation.
+        emit availabilityChanged(false, QStringLiteral("The hotkey is already reserved by another application or the desktop shell."));
         return false;
     }
 

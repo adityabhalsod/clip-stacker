@@ -17,7 +17,9 @@ public:
         int historyLimit = 250;
         bool syncEnabled = false;
         QString syncDirectory;
-        QString hotkey = QStringLiteral("Ctrl+Super+V");
+        // Use Qt portable text format: "Meta" is the Win/Super key, parsed by both
+        // QKeySequenceEdit and the X11 HotkeyManager (which accepts "meta" as Mod4Mask).
+        QString hotkey = QStringLiteral("Ctrl+Meta+V");
         bool storeSensitiveData = false;
         QStringList blockedApplications;
         QStringList sensitivePatterns;
