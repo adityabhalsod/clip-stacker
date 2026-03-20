@@ -99,24 +99,47 @@ endforeach()
 # Install the helper script used to enable autostart for the current user session.
 install(PROGRAMS packaging/linux/install-autostart.sh DESTINATION lib/clip-stacker)
 
-# Configure Debian package metadata consumed by CPack's DEB generator.
-set(CPACK_GENERATOR DEB)
+# ── CPack shared metadata (used by all generators) ──────────────────────────
+# Default generators: calling `cpack` produces all three formats.
+# Each CI job overrides this with `cpack -G DEB`, `cpack -G RPM`, or `cpack -G TGZ`.
+set(CPACK_GENERATOR "DEB;RPM;TGZ")
 set(CPACK_PACKAGE_NAME clip-stacker)
 set(CPACK_PACKAGE_VENDOR "Aditya")
-set(CPACK_PACKAGE_CONTACT "aditya@example.com")
+set(CPACK_PACKAGE_CONTACT "adityabhalsod99@gmail.com")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Clipboard history manager for Linux desktop environments")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+
+# Ensure all package formats install under /usr so XDG paths resolve correctly.
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+
+# ── Debian / Ubuntu (.deb) ───────────────────────────────────────────────────
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Aditya")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_SECTION utils)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
-
-# Ensure the .deb installs under /usr so desktop files and icons land in standard XDG paths.
-set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
-
-# Register Debian maintainer scripts that refresh the desktop and icon caches on install/remove.
+# Post-install / post-remove scripts refresh the desktop database and icon cache.
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
     "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postrm")
+
+# ── Fedora / RHEL / openSUSE (.rpm) ─────────────────────────────────────────
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Applications/Utilities")
+set(CPACK_RPM_PACKAGE_URL "https://github.com/adityabhalsod/clip-stacker")
+set(CPACK_RPM_PACKAGE_DESCRIPTION
+    "clip-stacker is a fast, lightweight clipboard manager for Linux desktop environments.\n"
+    "It captures everything you copy and lets you paste any previous item instantly\n"
+    "via a global hotkey popup, just like the Windows 11 clipboard manager.")
+# Auto-detect shared library dependencies so the RPM resolves correctly on the target distro.
+set(CPACK_RPM_PACKAGE_AUTOREQ ON)
+# Run the same post-install / post-uninstall cache refresh used by the .deb.
+set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE  "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postinst")
+set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/postrm")
+set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
+
+# ── Generic tarball (.tar.gz) — for Arch Linux and other distros ─────────────
+# Produces a portable archive with the same install-prefix layout (/usr/…).
+# Users can extract to /usr/local or run: sudo tar -xzf clip-stacker*.tar.gz -C /
+set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)
 
 include(CPack)
