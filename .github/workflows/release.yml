@@ -1,20 +1,25 @@
 # ============================================================================
-# Linux Release Build & Publish — GitHub Actions
+# Linux Multi-Distro / Multi-Arch Release Build — GitHub Actions
 # ============================================================================
-# Triggers on push to main, alpha, and beta branches.
-# Builds a clean Release binary via CMake, packages a .deb with CPack,
-# auto-increments the version, creates a GitHub Release with changelog,
-# and uploads the .deb as a downloadable asset.
 #
-# Branch → Release channel mapping:
-#   main  → stable release    (v0.1.0, v0.2.0, …)
-#   beta  → beta pre-release  (v0.2.0-beta.1, v0.2.0-beta.2, …)
-#   alpha → alpha pre-release (v0.2.0-alpha.1, v0.2.0-alpha.2, …)
+# Pipeline (3 jobs):
+#   1. prepare  — version bump, changelog, git tag          (runs once)
+#   2. build    — compile + package in a matrix             (parallel)
+#   3. release  — collect all artefacts, publish Release   (runs once)
 #
-# Performance optimizations:
-#   - Ninja generator for faster parallel builds
-#   - Build uses all available CPU cores (-j$(nproc))
-#   - CMake / apt dependency caching where feasible
+# Package matrix  (6 artefacts per release):
+# ┌────────────┬──────────────────────────────────────────┬───────┬────────┐
+# │ Format     │ Target distros                           │ amd64 │ arm64  │
+# ├────────────┼──────────────────────────────────────────┼───────┼────────┤
+# │ .deb       │ Ubuntu 22.04+, Debian, Mint, Pop!_OS     │   ✓   │   ✓   │
+# │ .rpm       │ Fedora 37+, openSUSE, RHEL, AlmaLinux    │   ✓   │   ✓   │
+# │ .tar.gz    │ Arch Linux, generic / other distros      │   ✓   │   ✓   │
+# └────────────┴──────────────────────────────────────────┴───────┴────────┘
+#
+# Branch → Release channel:
+#   main  → stable   (v0.1.0)
+#   beta  → beta     (v0.1.0-beta.N)
+#   alpha → alpha    (v0.1.0-alpha.N)
 # ============================================================================
 
 name: Linux Release
@@ -26,39 +31,225 @@ on:
       - alpha
       - beta
 
-# Only one release workflow per branch at a time
+# Cancel any in-progress run for the same branch before starting a new one.
 concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: true
 
-# Permissions required to create releases and push tags
+# Required to create Releases, push tags, and upload assets.
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build & Release (${{ github.ref_name }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
 
-    # Skip the pipeline when the commit message contains [skip ci] or [ci skip]
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1 — Prepare: determine version, generate changelog, push git tag.
+  # Outputs are shared with both the build matrix and the release job.
+  # ──────────────────────────────────────────────────────────────────────────
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
     if: |
       !contains(github.event.head_commit.message, '[skip ci]') &&
       !contains(github.event.head_commit.message, '[ci skip]')
 
+    outputs:
+      version:      ${{ steps.version.outputs.version }}
+      base_version: ${{ steps.version.outputs.base_version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      channel:      ${{ steps.version.outputs.channel }}
+      prerelease:   ${{ steps.version.outputs.prerelease }}
+      changelog:    ${{ steps.changelog.outputs.body }}
+
     steps:
-      # ── Checkout ──────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history needed for changelog generation
+          fetch-depth: 0  # full history required for changelog and tag detection
 
-      # ── Install build dependencies ────────────────────────────────────
-      - name: Install Qt 6, CMake, and X11 build dependencies
+      # ── Determine version and release channel ─────────────────────────
+      - name: Determine version and release channel
+        id: version
+        run: |
+          # Read base version from CMakeLists.txt (project VERSION x.y.z)
+          BASE_VERSION=$(grep -oP 'project\(clip-stacker\s+VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+
+          BRANCH="${GITHUB_REF_NAME}"
+
+          # Count commits since last tag to generate the pre-release build number
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            BUILD_NUMBER=$(git rev-list "${LAST_TAG}..HEAD" --count)
+          else
+            BUILD_NUMBER=$(git rev-list HEAD --count)
+          fi
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+          # Build version string and channel metadata per branch
+          if [ "$BRANCH" = "main" ]; then
+            VERSION="v${BASE_VERSION}"
+            PRERELEASE="false"
+            CHANNEL="stable"
+          elif [ "$BRANCH" = "beta" ]; then
+            VERSION="v${BASE_VERSION}-beta.${BUILD_NUMBER}"
+            PRERELEASE="true"
+            CHANNEL="beta"
+          elif [ "$BRANCH" = "alpha" ]; then
+            VERSION="v${BASE_VERSION}-alpha.${BUILD_NUMBER}"
+            PRERELEASE="true"
+            CHANNEL="alpha"
+          fi
+
+          echo "version=$VERSION"       >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL"       >> "$GITHUB_OUTPUT"
+
+          echo "📦 Version: $VERSION | Channel: $CHANNEL | Build: $BUILD_NUMBER"
+
+      # ── Generate changelog from conventional commits ───────────────────
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          RANGE="${LAST_TAG:+${LAST_TAG}..HEAD}"
+          [ -z "$RANGE" ] && RANGE="HEAD"
+
+          {
+            echo "## What's Changed"
+            echo ""
+
+            FEATURES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^feat" -i 2>/dev/null || true)
+            [ -n "$FEATURES" ] && echo "### ✨ Features"       && echo "$FEATURES" && echo ""
+
+            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^fix" -i 2>/dev/null || true)
+            [ -n "$FIXES" ] && echo "### 🐛 Bug Fixes"         && echo "$FIXES"    && echo ""
+
+            PERF=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^perf" -i 2>/dev/null || true)
+            [ -n "$PERF" ] && echo "### ⚡ Performance"         && echo "$PERF"    && echo ""
+
+            OTHER=$(git log "$RANGE" --pretty=format:"- %s (%h)" \
+                      --invert-grep --grep="^feat" --grep="^fix" --grep="^perf" -i 2>/dev/null || true)
+            [ -n "$OTHER" ] && echo "### 📦 Other Changes"     && echo "$OTHER"   && echo ""
+
+            echo "---"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG:-initial}...${{ steps.version.outputs.version }}"
+          } > changelog.md
+
+          {
+            echo "body<<CHANGELOG_EOF"
+            cat changelog.md
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Create and push the version tag ───────────────────────────────
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "⚠️  Tag $TAG already exists, skipping"
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "✅ Created and pushed tag $TAG"
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2 — Build: compile and package for each distro × arch pair.
+  #
+  # .deb  — built natively on the ubuntu runner (apt deps)
+  # .rpm  — built inside a fedora:40 container   (dnf deps + rpm-build)
+  # .tar.gz — built natively on the ubuntu runner (apt deps); compatible with
+  #           Arch Linux and any distro with glibc >= Ubuntu 24.04
+  #
+  # arm64 jobs use GitHub's hosted ubuntu-24.04-arm runners. For Fedora arm64
+  # Docker pulls the multi-arch fedora:40 image automatically.
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: "${{ matrix.pkg_label }} (${{ matrix.arch }})"
+    needs: prepare
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false  # one failing build must not cancel the others
+      matrix:
+        include:
+
+          # ── .deb — Ubuntu / Debian / Linux Mint / Pop!_OS ──────────────
+          - runner:    ubuntu-24.04
+            arch:      amd64
+            distro:    ubuntu
+            pkg_ext:   deb
+            pkg_label: "Ubuntu/Debian .deb"
+            container: null   # bare metal runner
+            install:   apt
+
+          - runner:    ubuntu-24.04-arm
+            arch:      arm64
+            distro:    ubuntu
+            pkg_ext:   deb
+            pkg_label: "Ubuntu/Debian .deb"
+            container: null
+            install:   apt
+
+          # ── .rpm — Fedora / openSUSE / RHEL / AlmaLinux / Rocky ────────
+          - runner:    ubuntu-24.04
+            arch:      x86_64
+            distro:    fedora
+            pkg_ext:   rpm
+            pkg_label: "Fedora/RHEL .rpm"
+            container: fedora:40   # Docker pulls amd64 image on amd64 host
+            install:   dnf
+
+          - runner:    ubuntu-24.04-arm
+            arch:      aarch64
+            distro:    fedora
+            pkg_ext:   rpm
+            pkg_label: "Fedora/RHEL .rpm"
+            container: fedora:40   # Docker pulls arm64 image on arm64 host
+            install:   dnf
+
+          # ── .tar.gz — Arch Linux and other distros ──────────────────────
+          - runner:    ubuntu-24.04
+            arch:      x86_64
+            distro:    arch
+            pkg_ext:   tar.gz
+            pkg_label: "Arch/Generic .tar.gz"
+            container: null
+            install:   apt
+
+          - runner:    ubuntu-24.04-arm
+            arch:      aarch64
+            distro:    arch
+            pkg_ext:   tar.gz
+            pkg_label: "Arch/Generic .tar.gz"
+            container: null
+            install:   apt
+
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+
+    steps:
+      # Fedora container image does not ship git — install it before checkout.
+      - name: Bootstrap git (Fedora container)
+        if: matrix.install == 'dnf'
+        run: dnf install -y git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Install build dependencies — Ubuntu / Arch (apt) ──────────────
+      - name: Install build dependencies (apt)
+        if: matrix.install == 'apt'
         run: |
           sudo apt-get update -qq
-
-          # Install the full set of development packages required by CMakeLists.txt
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
@@ -74,118 +265,26 @@ jobs:
             libxtst-dev \
             libxfixes-dev
 
-      # ── Determine version & release channel ───────────────────────────
-      - name: Determine version and release channel
-        id: version
+      # ── Install build dependencies — Fedora (dnf) ─────────────────────
+      - name: Install build dependencies (dnf)
+        if: matrix.install == 'dnf'
         run: |
-          # Read the base version from CMakeLists.txt (project VERSION x.y.z)
-          BASE_VERSION=$(grep -oP 'project\(clip-stacker\s+VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
-          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          dnf install -y \
+            gcc-c++ \
+            cmake \
+            ninja-build \
+            rpm-build \
+            qt6-qtbase-devel \
+            qt6-qtdeclarative-devel \
+            qt6-qttools-devel \
+            qt6-qtsvg-devel \
+            qt6-qtwayland-devel \
+            mesa-libGL-devel \
+            libX11-devel \
+            libXtst-devel \
+            libXfixes-devel
 
-          BRANCH="${GITHUB_REF_NAME}"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
-          # Count commits since the last tag to generate a build number
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$LAST_TAG" ]; then
-            BUILD_NUMBER=$(git rev-list "${LAST_TAG}..HEAD" --count)
-          else
-            BUILD_NUMBER=$(git rev-list HEAD --count)
-          fi
-          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-
-          # Construct the full version string based on the branch channel
-          if [ "$BRANCH" = "main" ]; then
-            VERSION="v${BASE_VERSION}"
-            DEB_NAME="clip-stacker_${BASE_VERSION}_amd64.deb"
-            PRERELEASE="false"
-            CHANNEL="stable"
-          elif [ "$BRANCH" = "beta" ]; then
-            VERSION="v${BASE_VERSION}-beta.${BUILD_NUMBER}"
-            DEB_NAME="clip-stacker_${BASE_VERSION}-beta.${BUILD_NUMBER}_amd64.deb"
-            PRERELEASE="true"
-            CHANNEL="beta"
-          elif [ "$BRANCH" = "alpha" ]; then
-            VERSION="v${BASE_VERSION}-alpha.${BUILD_NUMBER}"
-            DEB_NAME="clip-stacker_${BASE_VERSION}-alpha.${BUILD_NUMBER}_amd64.deb"
-            PRERELEASE="true"
-            CHANNEL="alpha"
-          fi
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "deb_name=$DEB_NAME" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-
-          echo "📦 Version: $VERSION | Channel: $CHANNEL | Build: $BUILD_NUMBER"
-
-      # ── Generate changelog from commits ───────────────────────────────
-      - name: Generate changelog
-        id: changelog
-        run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          # Build a markdown changelog from commit messages since last tag
-          if [ -n "$LAST_TAG" ]; then
-            echo "Generating changelog since $LAST_TAG"
-            RANGE="${LAST_TAG}..HEAD"
-          else
-            echo "No previous tag found — using full commit history"
-            RANGE="HEAD"
-          fi
-
-          # Categorize commits by conventional-commit prefixes
-          {
-            echo "## What's Changed"
-            echo ""
-
-            # Collect feature commits (feat:)
-            FEATURES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^feat" -i 2>/dev/null || true)
-            if [ -n "$FEATURES" ]; then
-              echo "### ✨ Features"
-              echo "$FEATURES"
-              echo ""
-            fi
-
-            # Collect bug-fix commits (fix:)
-            FIXES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^fix" -i 2>/dev/null || true)
-            if [ -n "$FIXES" ]; then
-              echo "### 🐛 Bug Fixes"
-              echo "$FIXES"
-              echo ""
-            fi
-
-            # Collect performance commits (perf:)
-            PERF=$(git log "$RANGE" --pretty=format:"- %s (%h)" --grep="^perf" -i 2>/dev/null || true)
-            if [ -n "$PERF" ]; then
-              echo "### ⚡ Performance"
-              echo "$PERF"
-              echo ""
-            fi
-
-            # Collect all other commits not matching the above categories
-            OTHER=$(git log "$RANGE" --pretty=format:"- %s (%h)" --invert-grep --grep="^feat" --grep="^fix" --grep="^perf" -i 2>/dev/null || true)
-            if [ -n "$OTHER" ]; then
-              echo "### 📦 Other Changes"
-              echo "$OTHER"
-              echo ""
-            fi
-
-            echo "---"
-            echo ""
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG:-initial}...${{ steps.version.outputs.version }}"
-          } > changelog.md
-
-          cat changelog.md
-
-          # Store changelog as multiline output
-          {
-            echo "body<<CHANGELOG_EOF"
-            cat changelog.md
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      # ── Configure CMake ───────────────────────────────────────────────
+      # ── Configure CMake ────────────────────────────────────────────────
       - name: Configure CMake (Release)
         run: |
           cmake -S . -B build \
@@ -193,81 +292,106 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/usr
 
-      # ── Build ─────────────────────────────────────────────────────────
+      # ── Compile ────────────────────────────────────────────────────────
       - name: Build
-        run: |
-          cmake --build build -j$(nproc)
+        run: cmake --build build -j$(nproc)
 
-      # ── Package .deb ──────────────────────────────────────────────────
-      - name: Package .deb with CPack
+      # ── Package with CPack ─────────────────────────────────────────────
+      - name: Package with CPack
         run: |
           cd build
-          cpack -G DEB
-
-          # List generated packages for the build log
+          # Map pkg_ext to CPack generator name
+          EXT="${{ matrix.pkg_ext }}"
+          if   [ "$EXT" = "deb" ];    then GEN="DEB"
+          elif [ "$EXT" = "rpm" ];    then GEN="RPM"
+          elif [ "$EXT" = "tar.gz" ]; then GEN="TGZ"
+          fi
+          cpack -G "$GEN"
           echo "📦 Generated packages:"
-          ls -lh *.deb 2>/dev/null || ls -lh _CPack_Packages/ 2>/dev/null || true
+          ls -lh *.deb *.rpm *.tar.gz 2>/dev/null || true
 
-      # ── Rename .deb to versioned filename ─────────────────────────────
-      - name: Rename .deb
+      # ── Rename to a consistent versioned filename ──────────────────────
+      - name: Rename package
+        id: rename
         run: |
-          DEB_DEST="${{ steps.version.outputs.deb_name }}"
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          BASE="${{ needs.prepare.outputs.base_version }}"
+          BUILD="${{ needs.prepare.outputs.build_number }}"
+          DISTRO="${{ matrix.distro }}"
+          ARCH="${{ matrix.arch }}"
+          EXT="${{ matrix.pkg_ext }}"
 
-          # Find the generated .deb file (CPack may use its own naming convention)
-          DEB_SRC=$(find build -name '*.deb' -type f | head -1)
-
-          if [ -z "$DEB_SRC" ]; then
-            echo "❌ No .deb file found in build/"
-            exit 1
-          fi
-
-          # Copy with the versioned name for the release asset
-          cp "$DEB_SRC" "$DEB_DEST"
-
-          # Print .deb size for the build log
-          DEB_SIZE=$(du -h "$DEB_DEST" | cut -f1)
-          echo "📦 Package: $DEB_DEST ($DEB_SIZE)"
-
-      # ── Create Git tag ────────────────────────────────────────────────
-      - name: Create and push tag
-        run: |
-          TAG="${{ steps.version.outputs.version }}"
-
-          # Check if tag already exists — skip if it does
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "⚠️  Tag $TAG already exists, skipping tag creation"
+          # Version string: "0.1.0" for stable, "0.1.0-beta.7" for pre-releases
+          if [ "$CHANNEL" = "stable" ]; then
+            VER="${BASE}"
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
-            echo "✅ Created and pushed tag $TAG"
+            VER="${BASE}-${CHANNEL}.${BUILD}"
           fi
 
-      # ── Create GitHub Release with .deb asset ─────────────────────────
+          # Find the package regardless of CPack's internal naming scheme
+          SRC=$(find build \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -type f | head -1)
+          if [ -z "$SRC" ]; then
+            echo "❌ No package found in build/" && exit 1
+          fi
+
+          # e.g. clip-stacker_0.1.0_ubuntu_amd64.deb
+          #      clip-stacker_0.1.0_fedora_x86_64.rpm
+          #      clip-stacker_0.1.0_arch_x86_64.tar.gz
+          DEST="clip-stacker_${VER}_${DISTRO}_${ARCH}.${EXT}"
+          cp "$SRC" "$DEST"
+          echo "pkg_path=$DEST" >> "$GITHUB_OUTPUT"
+          echo "✅ $DEST  ($(du -h "$DEST" | cut -f1))"
+
+      # ── Upload artefact for the release job ───────────────────────────
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.distro }}-${{ matrix.arch }}
+          path: ${{ steps.rename.outputs.pkg_path }}
+          retention-days: 1   # only needed until the release job runs
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 3 — Release: collect all packages and publish the GitHub Release.
+  # Runs only after every build matrix entry has completed successfully.
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      # Download every package artefact into a flat packages/ directory
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh packages/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "${{ steps.version.outputs.version }}"
-          body: ${{ steps.changelog.outputs.body }}
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
-          draft: false
-          generate_release_notes: false
-          files: |
-            ${{ steps.version.outputs.deb_name }}
+          tag_name:   ${{ needs.prepare.outputs.version }}
+          name:       ${{ needs.prepare.outputs.version }}
+          body:       ${{ needs.prepare.outputs.changelog }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          draft:      false
+          files:      packages/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Post-release summary ──────────────────────────────────────────
       - name: Release summary
         run: |
           echo "============================================"
           echo "🚀 Release Published!"
           echo "============================================"
-          echo "Version  : ${{ steps.version.outputs.version }}"
-          echo "Channel  : ${{ steps.version.outputs.channel }}"
-          echo "Package  : ${{ steps.version.outputs.deb_name }}"
-          echo "Pre-rel  : ${{ steps.version.outputs.prerelease }}"
-          echo "Release  : https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
+          echo "Version  : ${{ needs.prepare.outputs.version }}"
+          echo "Channel  : ${{ needs.prepare.outputs.channel }}"
+          echo "Packages :"
+          ls packages/
+          echo "Release  : https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.version }}"
           echo "============================================"
+

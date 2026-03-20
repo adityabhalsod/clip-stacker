@@ -83,12 +83,31 @@ Built with **C++20** and **Qt 6** for speed and low resource usage. History is s
 
 ## 📦 Quick Install
 
-### Option A — Download the `.deb` package
+### Option A — Download a package
 
-Go to the [**Releases**](../../releases) page, download the latest `.deb` file, and install:
+Go to the [**Releases**](../../releases) page and download the package for your distro and architecture:
 
+| Package | Distros | Architectures |
+|---------|---------|---------------|
+| `.deb` | Ubuntu 22.04+, Debian, Linux Mint, Pop!\_OS | amd64, arm64 |
+| `.rpm` | Fedora 37+, openSUSE, RHEL, AlmaLinux, Rocky | x86\_64, aarch64 |
+| `.tar.gz` | Arch Linux, and any other distro | x86\_64, aarch64 |
+
+**Ubuntu / Debian:**
 ```bash
-sudo apt install ./clip-stacker_*_amd64.deb
+sudo apt install ./clip-stacker_*_ubuntu_amd64.deb
+```
+
+**Fedora / RHEL:**
+```bash
+sudo dnf install ./clip-stacker_*_fedora_x86_64.rpm
+```
+
+**Arch Linux (and other distros — tarball):**
+```bash
+sudo tar -xzf clip-stacker_*_arch_x86_64.tar.gz -C /
+sudo update-desktop-database /usr/share/applications
+sudo gtk-update-icon-cache -f /usr/share/icons/hicolor
 ```
 
 ### Option B — Build from source
@@ -349,13 +368,19 @@ clip-stacker/
 
 ## 🚢 GitHub Actions CI/CD
 
-Every push to `main`, `beta`, or `alpha` triggers an automated pipeline that:
+Every push to `main`, `beta`, or `alpha` triggers a 3-job automated pipeline:
 
-1. Installs all Qt 6 and X11 build dependencies
-2. Builds the project in Release mode
-3. Packages a `.deb` artifact
-4. Creates a GitHub Release with auto-generated changelog
-5. Uploads the `.deb` as a downloadable asset
+1. **Prepare** — determines version, generates changelog, pushes git tag
+2. **Build matrix** — 6 parallel builds across distros and architectures
+3. **Release** — collects all packages and publishes the GitHub Release
+
+**Package matrix (6 artefacts per release):**
+
+| Format | Target Distros | amd64 / x86\_64 | arm64 / aarch64 |
+|--------|---------------|:--------------:|:---------------:|
+| `.deb` | Ubuntu 22.04+, Debian, Mint, Pop!\_OS | ✓ | ✓ |
+| `.rpm` | Fedora 37+, openSUSE, RHEL, AlmaLinux | ✓ | ✓ |
+| `.tar.gz` | Arch Linux, generic / other distros | ✓ | ✓ |
 
 **Branch → Release channel mapping:**
 

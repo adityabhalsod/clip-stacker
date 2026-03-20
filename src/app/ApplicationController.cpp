@@ -82,9 +82,13 @@ bool ApplicationController::initialize()
     // Refresh platform-sensitive services when settings change.
     connect(m_settingsManager.get(), &SettingsManager::settingsChanged, m_historyManager.get(), &HistoryManager::refreshModel);
 
-    // Register the default popup shortcut after the UI is ready to receive activation events.
-    // Register Ctrl+Super+V as the default popup shortcut to avoid conflicting with desktop shell bindings.
-    m_hotkeyManager->registerHotkey(QStringLiteral("Ctrl+Super+V"));
+    // Re-register the global hotkey whenever the user saves a new key combination in settings.
+    connect(m_settingsManager.get(), &SettingsManager::settingsChanged, this, [this]() {
+        m_hotkeyManager->registerHotkey(m_settingsManager->snapshot().hotkey);
+    });
+
+    // Register the hotkey from persistent settings on startup (defaults to Ctrl+Meta+V).
+    m_hotkeyManager->registerHotkey(m_settingsManager->snapshot().hotkey);
 
     // Start monitoring the clipboard with the tray menu and control socket as the popup entry points.
     m_clipboardListener->start();
