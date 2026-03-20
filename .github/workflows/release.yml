@@ -306,7 +306,7 @@ jobs:
           elif [ "$EXT" = "rpm" ];    then GEN="RPM"
           elif [ "$EXT" = "tar.gz" ]; then GEN="TGZ"
           fi
-          cpack -G "$GEN"
+          cpack -G "$GEN" --verbose
           echo "📦 Generated packages:"
           ls -lh *.deb *.rpm *.tar.gz 2>/dev/null || true
 
