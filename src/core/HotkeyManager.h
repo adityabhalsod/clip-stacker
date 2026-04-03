@@ -37,6 +37,12 @@ private:
     // Release any previous native key grab before re-registering or shutting down.
     void unregisterHotkey();
 
+    // Register the hotkey via GNOME custom keybindings when running on Wayland under GNOME.
+    bool registerViaDesktopKeybinding(const QString &sequence);
+
+    // Convert a portable hotkey string like "Ctrl+Alt+V" to GNOME binding format "<Control><Alt>v".
+    static QString toGnomeBinding(const QString &sequence);
+
     // Track whether a native grab is currently active.
     bool m_registered = false;
 
