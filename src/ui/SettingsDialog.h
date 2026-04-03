@@ -2,7 +2,6 @@
 
 #include <QDialog>
 
-class QKeySequenceEdit;
 class QSpinBox;
 class SettingsManager;
 
@@ -19,10 +18,6 @@ private slots:
     // Persist the current form values back into the runtime settings store.
     void saveSettings();
 
-protected:
-    // Intercept Escape on the hotkey field to clear it instead of reverting the partial sequence.
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
 private:
     // Load the current settings snapshot into the form controls.
     void loadSettings();
@@ -32,7 +27,4 @@ private:
 
     // Edit the maximum number of retained clipboard items (range: 1–500).
     QSpinBox *m_historyLimitSpinBox = nullptr;
-
-    // Capture the key combination that globally opens the clipboard popup.
-    QKeySequenceEdit *m_hotkeyEdit = nullptr;
 };
