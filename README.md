@@ -73,7 +73,7 @@ Built with **C++20** and **Qt 6** for speed and low resource usage. History is s
 └───────────────────────────┬─────────────────────────────┘
                             ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Press Ctrl+Super+V → popup appears near your cursor     │
+│  Press Ctrl+Alt+V → popup appears near your cursor     │
 │  Click any item → it pastes into the previously active   │
 │  application (just like Windows 11's Win+V)              │
 └─────────────────────────────────────────────────────────┘
@@ -134,7 +134,7 @@ Copy text, images, files, or rich content normally (`Ctrl+C`, right-click → Co
 
 ### Step 3 — Open clipboard history
 
-Press **`Ctrl+Super+V`** (Ctrl + Windows key + V). A popup appears near your cursor showing all your recent clips.
+Press **`Ctrl+Alt+V`** (Ctrl + Windows key + V). A popup appears near your cursor showing all your recent clips.
 
 ### Step 4 — Paste a previous item
 
@@ -159,7 +159,7 @@ Press **`Ctrl+Super+V`** (Ctrl + Windows key + V). A popup appears near your cur
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Super+V` | Open/close clipboard history popup |
+| `Ctrl+Alt+V` | Open/close clipboard history popup |
 | `Enter` | Paste the highlighted item |
 | `↑` / `↓` | Navigate through history items |
 | `Escape` | Close the popup |
@@ -427,7 +427,7 @@ Contributions are welcome! Here's how to get started:
 ## 🔧 Troubleshooting
 
 <details>
-<summary><strong>Ctrl+Super+V does not open the popup</strong></summary>
+<summary><strong>Ctrl+Alt+V does not open the popup</strong></summary>
 
 - The global hotkey requires an **X11 session**. It will not work on pure Wayland.
 - Another application may have already grabbed this shortcut. Check your desktop environment's keyboard settings.
