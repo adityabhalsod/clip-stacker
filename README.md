@@ -46,7 +46,7 @@ Built with **C++20** and **Qt 6** for speed and low resource usage. History is s
 | Feature | Description |
 |---|---|
 | **Clipboard History** | Saves plain text, rich text (HTML/RTF), images, and file URI lists |
-| **Instant Popup** | Press `Ctrl+Super+V` to open a searchable history panel near your cursor |
+| **Instant Popup** | Press `Ctrl+Alt+V` to open a searchable history panel near your cursor |
 | **Single-Click Paste** | Click any item → it copies to clipboard **and** pastes into the active app |
 | **Pin & Favorite** | Pin important clips so they're never pruned; star favorites for quick access |
 | **Live Search** | Type to filter history entries in real time |
